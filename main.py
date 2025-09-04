@@ -1,4 +1,4 @@
-from fastapi import Request, FastAPI
+from fastapi import Request, FastAPI, HTTPException
 import shutil
 from ncoreparser import Client, SearchParamWhere, SearchParamType, ParamSort, ParamSeq
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,8 +17,14 @@ class Data(BaseModel):
   date: str
 
 app = FastAPI()
+app.client = None
+app.username = "minya97"
+app.password = "kD-AsLQuSPeOuQBxsqIR"
 
-origins = ["*"]
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,34 +34,60 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def ensure_logged_in():
+    """Ensure client is logged in, re-login if session expired"""
+    try:
+        if app.client is None:
+            app.client = Client()
+            app.client.login(app.username, app.password)
+        else:
+            # Test if session is still valid by making a small request
+            app.client.get_recommended(type=SearchParamType.HD_HUN, number=1)
+    except Exception as e:
+        # Session expired or other error, re-login
+        try:
+            app.client = Client()
+            app.client.login(app.username, app.password)
+        except Exception as login_error:
+            raise HTTPException(status_code=500, detail=f"Login failed: {str(login_error)}")
+
+@app.on_event("startup")
+async def startup_event():
+    ensure_logged_in()
+
 @app.get("/api/test")
-async def login():
-  return {"message":"Test"}
+async def test():
+  return {"message":dir(SearchParamType)}
 
 @app.get("/api/login")
 async def login():
-  app.client = Client()
-  app.client.login("", "")
-  return {"message":"Login"}
+  ensure_logged_in()
+  return {"message":"Login successful"}
 
 @app.get("/api/logout")
 async def logout():
-  app.client.logout()
+  if app.client:
+    app.client.logout()
+    app.client = None
   return {"message":"Logout"}
 
 @app.get("/api/torrents")
-async def root(type, pattern):
-  torrents = []
-  print(type,pattern);
-  torrent = app.client.search(pattern=pattern, type=SearchParamType[type], number=1,
-  sort_by=ParamSort.SEEDERS, sort_order=ParamSeq.DECREASING)[0]
-  return torrent
+async def root(pattern):
+  ensure_logged_in()
+  torrents = app.client.search(
+            pattern=pattern,
+            type=SearchParamType.HD_HUN,
+            sort_by=ParamSort.SEEDERS,
+            sort_order=ParamSeq.DECREASING
+        )
+  return torrents
 
 @app.post("/api/torrents/download")
 async def download_torrent(request: Request):
+    ensure_logged_in()
     torrent_data = await request.json()
     downloadable_torrent = Torrent(**torrent_data)
-    app.client.download(downloadable_torrent, "torrents")
+    app.client.download(downloadable_torrent, "/torrents")
     return {"message": "Downloaded"}
 
 @app.get("/api/disk/free")
@@ -65,9 +97,9 @@ async def get_free_space():
 
 @app.get("/api/torrents/recommended")
 async def get_all():
+  ensure_logged_in()
   torrents = app.client.get_recommended(type=SearchParamType.HD_HUN)
   for torrent in torrents:
       print(torrent['title'], torrent['type'], torrent['size'], torrent['id'])
 
-  return {torrents}
-
+  return {"torrents": torrents}
