@@ -72,11 +72,11 @@ async def logout():
   return {"message":"Logout"}
 
 @app.get("/api/torrents")
-async def root(pattern):
+async def root(pattern,type: SearchParamType = SearchParamType.HD_HUN):
   ensure_logged_in()
   torrents = app.client.search(
             pattern=pattern,
-            type=SearchParamType.HD_HUN,
+            type=type,
             sort_by=ParamSort.SEEDERS,
             sort_order=ParamSeq.DECREASING
         )
