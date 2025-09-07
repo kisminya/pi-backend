@@ -40,6 +40,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+download_folder = "/home/pi/Downloads/torrents"
+
+# Ellenőrizzük, hogy a mappa létezik
+if not os.path.exists(download_folder):
+    print("A mappa nem létezik.")
+else:
+    # Ellenőrizzük az írási jogot
+    if os.access(download_folder, os.W_OK):
+        print("Python tud írni a mappába.")
+    else:
+        print("Nincs írási joga a mappához!")
+
+# Teszt létrehozása
+try:
+    test_path = os.path.join(download_folder, "test.txt")
+    with open(test_path, "w") as f:
+        f.write("Teszt")
+    print("Fájl létrehozva, írási jog OK.")
+    os.remove(test_path)  # Töröljük a teszt fájlt
+except PermissionError:
+    print("PermissionError: Python nem tud írni a mappába.")
+
 @app.get("/api/torrents")
 async def root(pattern,type: SearchParamType = SearchParamType.HD_HUN):
   ensure_logged_in()
@@ -95,7 +117,7 @@ async def download_torrent(request: Request):
     ensure_logged_in()
     torrent_data = await request.json()
     downloadable_torrent = Torrent(**torrent_data)
-    app.client.download(downloadable_torrent, "/torrents")
+    app.client.download(downloadable_torrent, "/home/pi/Downloads/torrents")
     return {"message": "Downloaded"}
 
 @app.get("/api/disk/free")
