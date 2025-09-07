@@ -1,10 +1,13 @@
 from fastapi import Request, FastAPI, HTTPException
 import shutil
+from fastapi.staticfiles import StaticFiles
 from ncoreparser import Client, SearchParamWhere, SearchParamType, ParamSort, ParamSeq
 from fastapi.middleware.cors import CORSMiddleware
 import psutil
 from ncoreparser.torrent import Torrent
 from pydantic import BaseModel
+from fastapi.responses import FileResponse
+import os
 
 class Data(BaseModel):
   id: str
@@ -21,10 +24,13 @@ app.client = None
 app.username = "minya97"
 app.password = "kD-AsLQuSPeOuQBxsqIR"
 
+
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+
+CLIENT_DIST = os.path.join(os.path.dirname(__file__), "frontend", "build", "client")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,6 +39,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/api/torrents")
+async def root(pattern,type: SearchParamType = SearchParamType.HD_HUN):
+  ensure_logged_in()
+  torrents = app.client.search(
+            pattern=pattern,
+            type=type,
+            sort_by=ParamSort.SEEDERS,
+            sort_order=ParamSeq.DECREASING
+        )
+  return torrents
+
 
 def ensure_logged_in():
     """Ensure client is logged in, re-login if session expired"""
@@ -71,16 +89,6 @@ async def logout():
     app.client = None
   return {"message":"Logout"}
 
-@app.get("/api/torrents")
-async def root(pattern,type: SearchParamType = SearchParamType.HD_HUN):
-  ensure_logged_in()
-  torrents = app.client.search(
-            pattern=pattern,
-            type=type,
-            sort_by=ParamSort.SEEDERS,
-            sort_order=ParamSeq.DECREASING
-        )
-  return torrents
 
 @app.post("/api/torrents/download")
 async def download_torrent(request: Request):
@@ -103,3 +111,16 @@ async def get_all():
       print(torrent['title'], torrent['type'], torrent['size'], torrent['id'])
 
   return {"torrents": torrents}
+
+
+# Serve static assets (JS, CSS, images)
+app.mount("/assets", StaticFiles(directory=os.path.join(CLIENT_DIST, "assets")), name="assets")
+
+
+
+# Catch-all route: send index.html for React Router
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    if full_path.startswith("api/"):
+        return {"error": "Not found"}  # or raise HTTPException(404)
+    return FileResponse(os.path.join(CLIENT_DIST, "index.html"))
